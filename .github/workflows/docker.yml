@@ -1,0 +1,176 @@
+name: Docker
+
+on: [push, pull_request]
+
+env:
+  UBUNTU_DISTRO: "22.04"
+
+jobs:
+
+  set-up:
+    name: Set up
+    runs-on: self-hosted
+    steps:
+      - name: Clean up
+        run: rm -rf *
+
+      - uses: actions/checkout@v5
+        name: Checkout repository
+        with:
+          lfs: true
+          submodules: true
+
+  create-base-image:
+    name: Create base image
+    runs-on: self-hosted
+    needs: set-up
+    steps:
+
+      - uses: docker/build-push-action@v6
+        name: Build image
+        with:
+          context: Util/Docker
+          file: Util/Docker/Base.Dockerfile
+          tags: carla-base:ue4-${{ env.UBUNTU_DISTRO }}
+          no-cache: true
+          build-args: |
+            UBUNTU_DISTRO=${{ env.UBUNTU_DISTRO }}
+
+  create-monolith-image:
+    name: Create monolith image
+    runs-on: self-hosted
+    needs: create-base-image
+    env:
+      IMAGE_TAG_SUFFIX: ""
+    steps:
+      - name: Set image tag
+        if: github.ref_name != github.event.repository.default_branch
+        run: echo "IMAGE_TAG_SUFFIX=_$(echo '${{ github.ref_name }}' | tr / -)_ci" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        name: Login to Docker Hub
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - uses: docker/build-push-action@v5
+        name: Build and push image
+        with:
+          context: .
+          file: Util/Docker/Development.Dockerfile
+          target: monolith
+          tags: rwthika/carla-simulator:monolith${{ env.IMAGE_TAG_SUFFIX }}
+          no-cache: true
+          push: true
+          secrets: |
+            "epic_user=${{ secrets.EPIC_USER }}"
+            "epic_token=${{ secrets.EPIC_TOKEN }}"
+          build-args: |
+            UBUNTU_DISTRO=${{ env.UBUNTU_DISTRO }}
+
+  provide-artifacts:
+    name: Provide artifacts
+    runs-on: self-hosted
+    needs: create-monolith-image
+    permissions:
+      contents: write 
+    env:
+      IMAGE_TAG_SUFFIX: ""
+    steps:
+
+      - name: Clean artifacts
+        run: |
+          rm -rf artifacts
+
+      - name: Set image tag
+        if: github.ref_name != github.event.repository.default_branch
+        run: echo "IMAGE_TAG_SUFFIX=_$(echo '${{ github.ref_name }}' | tr / -)_ci" >> $GITHUB_ENV
+
+      - uses: shrink/actions-docker-extract@v3
+        name: Extract carla-package
+        with:
+          image: rwthika/carla-simulator:monolith${{ env.IMAGE_TAG_SUFFIX }}
+          path: workspaces/carla/Dist
+          destination: artifacts/
+
+      - uses: shrink/actions-docker-extract@v3
+        name: Extract carla-python-api
+        with:
+          image: rwthika/carla-simulator:monolith${{ env.IMAGE_TAG_SUFFIX }}
+          path: workspaces/carla/PythonAPI
+          destination: artifacts
+
+      - name: Create PythonAPI archive
+        if: startsWith(github.ref, 'refs/tags')
+        run: |
+          tar -czvf artifacts/PythonAPI.tar.gz artifacts/PythonAPI
+
+      - uses: ncipollo/release-action@v1         
+        name: Create Release
+        if: startsWith(github.ref, 'refs/tags')
+        with:
+          allowUpdates: true
+          tag: ${{ github.ref_name }}
+          commit: ${{ github.sha }}
+          artifacts: artifacts/PythonAPI.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-client-image:
+    name: Create client image
+    runs-on: self-hosted
+    needs: provide-artifacts
+    env:
+      IMAGE_TAG_SUFFIX: ""
+    steps:
+      - name: Set image tag
+        if: github.ref_name != github.event.repository.default_branch
+        run: echo "IMAGE_TAG_SUFFIX=_$(echo '${{ github.ref_name }}' | tr / -)_ci" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        name: Login to Docker Hub
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - uses: docker/build-push-action@v5
+        name: Build and push image
+        with:
+          context: .
+          file: Util/Docker/client/Client.Dockerfile
+          tags: rwthika/carla-simulator:client${{ env.IMAGE_TAG_SUFFIX }}
+          no-cache: true
+          push: true
+
+  create-server-image:
+    name: Create server image
+    runs-on: self-hosted
+    needs: create-client-image
+    env:
+      IMAGE_TAG_SUFFIX: ""
+    steps:
+      - name: Set image tag
+        if: github.ref_name != github.event.repository.default_branch
+        run: echo "IMAGE_TAG_SUFFIX=_$(echo '${{ github.ref_name }}' | tr / -)_ci" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        name: Login to Docker Hub
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract artifact
+        run: |
+          rm -rf build
+          mkdir -p build
+          tar -xvzf artifacts/Dist/*.tar.gz -C build
+
+      - uses: docker/build-push-action@v5
+        name: Build and push
+        with:
+          context: build
+          file: build/Dockerfile
+          tags: rwthika/carla-simulator:server${{ env.IMAGE_TAG_SUFFIX }}
+          no-cache: true
+          push: true
+          build-args: |
+            UBUNTU_DISTRO=${{ env.UBUNTU_DISTRO }}

@@ -40,7 +40,7 @@ Other commands:
 END
 )
 
-UBUNTU_DISTRO=20.04
+UBUNTU_DISTRO=22.04
 
 BUILD_BASE=false
 BUILD_DEV=false
@@ -139,11 +139,11 @@ if ${BUILD_DEV}; then
     --build-arg DOCKER_GID=${DOCKER_GID} \
     --target development \
     -t carla-development:ue4-${UBUNTU_DISTRO} \
-    -f ${SCRIPT_DIR}/Development.Dockerfile ${SCRIPT_DIR}
+    -f ${SCRIPT_DIR}/Development.Dockerfile ${SCRIPT_DIR}/../../
 fi
 
 if ${BUILD_MONOLITH}; then
-  # Load .env file for EPIC_USER, EPIC_PASS, etc.
+  # Load .env file for EPIC_USER, EPIC_TOKEN, etc.
   if [ -f "${CARLA_ROOT}/.env" ]; then
     # shellcheck disable=SC2046
     export $(grep -v '^#' "${CARLA_ROOT}/.env" | xargs)
@@ -167,7 +167,7 @@ if ${BUILD_MONOLITH}; then
     --secret id=epic_token,env=EPIC_TOKEN \
     --target monolith \
     -t carla-monolith:${BRANCH} \
-    -f ${SCRIPT_DIR}/Development.Dockerfile ${SCRIPT_DIR}
+    -f ${SCRIPT_DIR}/Development.Dockerfile ${SCRIPT_DIR}/../../
 fi
 
 if  ${BUILD_CI} ; then

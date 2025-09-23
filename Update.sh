@@ -43,6 +43,8 @@ done
 
 MAX_PARALLELL_DOWNLOADS=16
 MAX_CONNECTIONS_PER_SERVER=16
+# Opt-in flag to keep aria2c disabled by default on self-hosted runners.
+USE_ARIA2C=${USE_ARIA2C:-false}
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 pushd "$SCRIPT_DIR" >/dev/null
@@ -61,7 +63,7 @@ function download_content {
   fi
   mkdir -p "$CONTENT_FOLDER"
   mkdir -p Content
-  if hash aria2c 2>/dev/null; then
+  if $USE_ARIA2C && hash aria2c 2>/dev/null; then
     echo -e "${CONTENT_LINK}\n\tout=Content.tar.gz" > .aria2c.input
     aria2c -j${MAX_PARALLELL_DOWNLOADS} -x${MAX_CONNECTIONS_PER_SERVER} --input-file=.aria2c.input
     rm -f .aria2c.input

@@ -34,8 +34,8 @@ ENV XDG_RUNTIME_DIR=/run/user/${UID}
 # Install runtime python libraries (to run examples and utils)
 USER root
 
-COPY .tmp/examples_requirements.txt /requirements/examples_requirements.txt
-COPY .tmp/util_requirements.txt /requirements/util_requirements.txt
+COPY ./PythonAPI/examples/requirements.txt /requirements/examples_requirements.txt
+COPY ./PythonAPI/util/requirements.txt  /requirements/util_requirements.txt
 
 RUN python3.8 -m pip install -r requirements/examples_requirements.txt
 RUN python3.8 -m pip install -r requirements/util_requirements.txt
@@ -90,15 +90,13 @@ RUN --mount=type=secret,id=epic_user,uid=${UID} \
       --epic-user $(cat /run/secrets/epic_user) \
       --epic-token $(cat /run/secrets/epic_token)
 
-# Built carla
+# Copy carla
 ENV CARLA_UE4_ROOT="/workspaces/carla"
-ARG BRANCH=ue4-dev
-RUN git clone --depth 1 --branch ${BRANCH} https://github.com/carla-simulator/carla.git ${CARLA_UE4_ROOT}
-
+COPY --chown=carla . ${CARLA_UE4_ROOT}
 WORKDIR ${CARLA_UE4_ROOT}
 
 # NOTE: Don't run these commands together as Update.sh truncates the output
 RUN ./Update.sh
-RUN make PythonAPI
-RUN make CarlaUE4Editor
-RUN make package && rm -rf ${CARLA_UE4_ROOT}/Dist
+RUN make CarlaUE4Editor ARGS="--python-version='3.10,3.11,3.12' --ros2"
+RUN make PythonAPI ARGS="--python-version='3.10,3.11,3.12' --ros2"
+RUN make package ARGS="--python-version='3.10,3.11,3.12' --ros2"
